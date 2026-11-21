@@ -22,6 +22,15 @@ static void check(cgltf_float target[3], float x, float y, float z) {
     }
 }
 
+static void check_matrix(const cgltf_float target[16], const cgltf_float expected[16]) {
+    for (int i = 0; i < 16; ++i) {
+        if (target[i] != expected[i]) {
+            fprintf(stderr, "Matrix mismatch at %d: got %f, expected %f.\n", i, target[i], expected[i]);
+            exit(1);
+        }
+    }
+}
+
 int main(int, char**)
 {
     cgltf_node node = {};
@@ -47,6 +56,50 @@ int main(int, char**)
     cgltf_node_transform_local(&node, matrix);
     transform(matrix, source, target);
     check(target, 2, 6, 3);
+
+    // G * P * L, where G is a full 4x4 matrix, P is a matrix with a
+    // projective fourth row, and L is a regular TRS translation.
+    // G = 2 * I
+    // P = [1 0 0 1; 0 1 0 2; 0 0 1 3; 0 0 0 2]
+    // L = [1 0 0 4; 0 1 0 5; 0 0 1 6; 0 0 0 1]
+    // Hand-computed G * P * L:
+    // [2 0 0 10; 0 2 0 14; 0 0 2 18; 0 0 0 4]
+    cgltf_node grandparent = {};
+    grandparent.has_matrix = 1;
+    cgltf_float grandparent_matrix[16] = {
+        2, 0, 0, 0,
+        0, 2, 0, 0,
+        0, 0, 2, 0,
+        0, 0, 0, 2,
+    };
+    memcpy(grandparent.matrix, grandparent_matrix, sizeof(grandparent_matrix));
+
+    cgltf_node parent = {};
+    parent.parent = &grandparent;
+    parent.has_matrix = 1;
+    cgltf_float parent_matrix[16] = {
+        1, 0, 0, 0,
+        0, 1, 0, 0,
+        0, 0, 1, 0,
+        1, 2, 3, 2,
+    };
+    memcpy(parent.matrix, parent_matrix, sizeof(parent_matrix));
+
+    cgltf_node child = {};
+    child.parent = &parent;
+    set(child.translation, 4, 5, 6);
+    set(child.scale, 1, 1, 1);
+    child.rotation[3] = 1;
+
+    cgltf_float expected_world[16] = {
+        2, 0, 0, 0,
+        0, 2, 0, 0,
+        0, 0, 2, 0,
+        10, 14, 18, 4,
+    };
+    cgltf_float world[16];
+    cgltf_node_transform_world(&child, world);
+    check_matrix(world, expected_world);
 
     return 0;
 }

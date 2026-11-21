@@ -2140,7 +2140,7 @@ void cgltf_node_transform_local(const cgltf_node* node, cgltf_float* out_matrix)
 
 	if (node->has_matrix)
 	{
-		memcpy(lm, node->matrix, sizeof(float) * 16);
+		memcpy(lm, node->matrix, sizeof(cgltf_float) * 16);
 	}
 	else
 	{
@@ -2179,36 +2179,62 @@ void cgltf_node_transform_local(const cgltf_node* node, cgltf_float* out_matrix)
 	}
 }
 
+static void cgltf_node_transform_multiply(const cgltf_float* a, const cgltf_float* b, cgltf_float* out_matrix)
+{
+	for (int i = 0; i < 4; ++i)
+	{
+		for (int j = 0; j < 4; ++j)
+		{
+			out_matrix[i * 4 + j] =
+				a[j + 0] * b[i * 4 + 0] +
+				a[j + 4] * b[i * 4 + 1] +
+				a[j + 8] * b[i * 4 + 2] +
+				a[j + 12] * b[i * 4 + 3];
+		}
+	}
+}
+
 void cgltf_node_transform_world(const cgltf_node* node, cgltf_float* out_matrix)
 {
 	cgltf_float* lm = out_matrix;
 	cgltf_node_transform_local(node, lm);
 
 	const cgltf_node* parent = node->parent;
+	cgltf_bool is_affine = !node->has_matrix;
 
 	while (parent)
 	{
 		float pm[16];
 		cgltf_node_transform_local(parent, pm);
 
-		for (int i = 0; i < 4; ++i)
+		if (is_affine && !parent->has_matrix)
 		{
-			float l0 = lm[i * 4 + 0];
-			float l1 = lm[i * 4 + 1];
-			float l2 = lm[i * 4 + 2];
+			for (int i = 0; i < 4; ++i)
+			{
+				float l0 = lm[i * 4 + 0];
+				float l1 = lm[i * 4 + 1];
+				float l2 = lm[i * 4 + 2];
 
-			float r0 = l0 * pm[0] + l1 * pm[4] + l2 * pm[8];
-			float r1 = l0 * pm[1] + l1 * pm[5] + l2 * pm[9];
-			float r2 = l0 * pm[2] + l1 * pm[6] + l2 * pm[10];
+				float r0 = l0 * pm[0] + l1 * pm[4] + l2 * pm[8];
+				float r1 = l0 * pm[1] + l1 * pm[5] + l2 * pm[9];
+				float r2 = l0 * pm[2] + l1 * pm[6] + l2 * pm[10];
 
-			lm[i * 4 + 0] = r0;
-			lm[i * 4 + 1] = r1;
-			lm[i * 4 + 2] = r2;
+				lm[i * 4 + 0] = r0;
+				lm[i * 4 + 1] = r1;
+				lm[i * 4 + 2] = r2;
+			}
+
+			lm[12] += pm[12];
+			lm[13] += pm[13];
+			lm[14] += pm[14];
 		}
-
-		lm[12] += pm[12];
-		lm[13] += pm[13];
-		lm[14] += pm[14];
+		else
+		{
+			float result[16];
+			cgltf_node_transform_multiply(pm, lm, result);
+			memcpy(lm, result, sizeof(result));
+			is_affine = 0;
+		}
 
 		parent = parent->parent;
 	}

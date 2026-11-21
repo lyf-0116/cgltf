@@ -45,11 +45,24 @@ int main(int argc, char** argv)
 		const cgltf_accessor* blob = data->accessors + blob_index;
 		if (blob->is_sparse)
 		{
-			cgltf_size nfloats = cgltf_num_components(blob->type) * blob->count;
+			cgltf_size floats_per_element = cgltf_num_components(blob->type);
+			cgltf_size nfloats = floats_per_element * blob->count;
 			cgltf_float* dense = (cgltf_float*) malloc(nfloats * sizeof(cgltf_float));
 			if (cgltf_accessor_unpack_floats(blob, dense, nfloats) < nfloats) {
 				printf("Unable to completely unpack a sparse accessor.\n");
 				return -1;
+			}
+			for (cgltf_size index = 0; index < blob->count; ++index)
+			{
+				cgltf_accessor_read_float(blob, index, element_float, 16);
+				for (cgltf_size component = 0; component < floats_per_element; ++component)
+				{
+					if (!is_near(dense[index * floats_per_element + component], element_float[component]))
+					{
+						printf("Sparse unpack mismatch at element %zu, component %zu: %f vs %f\n", (size_t)index, (size_t)component, dense[index * floats_per_element + component], element_float[component]);
+						return -1;
+					}
+				}
 			}
 			free(dense);
 			continue;
